@@ -233,13 +233,15 @@ def manual_select(total_list,exclude_list=None):
 
 
 
-def run(train_path,test_path,result_path,net_depth=3,exclude_list=None,scale_flag=True):
+def run(train_path,test_path,result_path,net_depth=3,exclude_list=None,scale_flag=True,select_flag=True):
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '5'
     torch.manual_seed(0)
 
     if scale_flag:
         output_dir = f'./model_exclude_scale/'
+    elif select_flag:
+        output_dir = f'./model_select/'
     else:
         output_dir = f'./model_exclude/'
 
@@ -291,15 +293,17 @@ def run(train_path,test_path,result_path,net_depth=3,exclude_list=None,scale_fla
     
 
     # feature selection
-    # select_model_path = './select_model.pkl'
-    # if os.path.exists(select_model_path):
-    #     with open(select_model_path, 'rb') as f:
-    #         select_model = pickle.load(f)
-    # else:
-    #     select_model = select_feature_linesvc(X, Y, select_model_path)
+    if select_flag:
+        select_model_path = './select_model.pkl'
+        if os.path.exists(select_model_path):
+            with open(select_model_path, 'rb') as f:
+                select_model = pickle.load(f)
+        else:
+            select_model = select_feature_linesvc(X, Y, select_model_path)
 
-    # X = select_model.transform(X)
-    # test = select_model.transform(test)
+        X = select_model.transform(X)
+        test = select_model.transform(test)
+    
     # print(Y)
     print(X.shape,test.shape)
 
