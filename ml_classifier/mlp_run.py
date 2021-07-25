@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast,GradScaler
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score,f1_score
 from utils import dfs_remove_weight
 from feature_selection import select_feature_linesvc
@@ -232,26 +233,26 @@ def manual_select(total_list,exclude_list=None):
 
 
 
-def run(net_depth=3,exclude_list=None):
+def run(train_path,test_path,result_path,net_depth=3,exclude_list=None,scale_flag=True):
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '5'
     torch.manual_seed(0)
 
-    output_dir = f'./model_exclude/'
+    if scale_flag:
+        output_dir = f'./model_exclude_scale/'
+    else:
+        output_dir = f'./model_exclude/'
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     else:
         shutil.rmtree(output_dir)
         os.makedirs(output_dir)
     # load training and testing data
-    train_path = '../dataset/pssm_train.csv'
+    
     train_df = pd.read_csv(train_path)
-
-    test_path = '../dataset/pssm_test.csv'
     test_df = pd.read_csv(test_path)
-
     # result
-    result_path = '../converter/test_result.csv'
     from utils import csv_reader_single
     result_dict = csv_reader_single(result_path,'sample_id','category_id')    
 
@@ -277,6 +278,17 @@ def run(net_depth=3,exclude_list=None):
     Y = np.asarray(train_df['label']).astype(np.uint8)
     X = np.asarray(train_df[fea_list]).astype(np.float32)
     test = np.asarray(test_df[fea_list]).astype(np.float32)
+    
+    # data scaler
+    if scale_flag:
+        X_len = X.shape[0]
+        data_scaler = StandardScaler()
+        cat_data = np.concatenate([X,test],axis=0)
+        cat_data= data_scaler.fit_transform(cat_data)
+
+        X = cat_data[:X_len]
+        test = cat_data[X_len:]
+    
 
     # feature selection
     # select_model_path = './select_model.pkl'
@@ -399,8 +411,13 @@ def run(net_depth=3,exclude_list=None):
 
 if __name__ == '__main__':
     pssm_key = ['pssm_sum', 'pssm_avg','acc_1','acc_2','acc_3','acc_4','acc_5','acc_6','sxg_0','sxg_1','sxg_2','sxg_3','sxg_4','sxg_5']
+    hmm_key = ['hmm_sum', 'hmm_avg','acc_hmm_1','acc_hmm_2','acc_hmm_3','acc_hmm_4','acc_hmm_5','acc_hmm_6','sxg_hmm_0','sxg_hmm_1','sxg_hmm_2','sxg_hmm_3','sxg_hmm_4','sxg_hmm_5']
     
+    train_path = '../dataset/pssm_train.csv'
+    test_path = '../dataset/pssm_test.csv'
+    result_path = '../converter/test_result.csv'
+
     for i in range(10):
         exclude_list = random.sample(pssm_key[2:],6)
         print('exclude list:',exclude_list)
-        run(net_depth=3,exclude_list=exclude_list)
+        run(train_path,test_path,result_path,net_depth=3,exclude_list=exclude_list,scale_flag=True)

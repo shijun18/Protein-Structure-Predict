@@ -11,7 +11,7 @@ def pkl_to_csv(pkl_file,csv_path,exclude_key=['pssm','hmm']):
     }
     with open(pkl_file,'rb') as f:
         data = pickle.load(f)
-
+    # print(data[0].keys())
     for item in tqdm(data):
         for key in item.keys():
             if key not in exclude_key:
@@ -41,10 +41,18 @@ if __name__ == '__main__':
     hmm_key = ['hmm_sum', 'hmm_avg','acc_hmm_1','sxg_hmm_0','acc_hmm_2','sxg_hmm_1','acc_hmm_3','sxg_hmm_2','acc_hmm_4','sxg_hmm_3','acc_hmm_5','sxg_hmm_4','acc_hmm_6','sxg_hmm_5']
     pssm_key = ['pssm_sum', 'pssm_avg','acc_1','sxg_0','acc_2','sxg_1','acc_3','sxg_2','acc_4','sxg_3','acc_5','sxg_4','acc_6','sxg_5']
 
+    # train_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/train.pkl'
+    # train_csv = '../dataset/pssm_hmm_train.csv'
+    # pkl_to_csv(train_pkl,train_csv,['pssm','hmm'])
+
+    # test_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/test.pkl'
+    # test_csv = '../dataset/pssm_hmm__test.csv'
+    # pkl_to_csv(test_pkl,test_csv,['pssm','hmm'])
+    
     train_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/train.pkl'
-    train_csv = '../dataset/pssm_train.csv'
-    pkl_to_csv(train_pkl,train_csv,['pssm','hmm'] + hmm_key)
+    train_csv = '../dataset/hmm_train.csv'
+    pkl_to_csv(train_pkl,train_csv,['pssm','hmm'] + pssm_key)
 
     test_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/test.pkl'
-    test_csv = '../dataset/pssm_test.csv'
-    pkl_to_csv(test_pkl,test_csv,['pssm','hmm'] + hmm_key)
+    test_csv = '../dataset/hmm_test.csv'
+    pkl_to_csv(test_pkl,test_csv,['pssm','hmm'] + pssm_key)
