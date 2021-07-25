@@ -49,7 +49,7 @@ class MLP_CLASSIFIER(nn.Module):
                 self.linear_list.append(nn.Linear(depth_list[i-1],depth_list[i]))
             if use_norm:
                 self.linear_list.append(nn.BatchNorm1d(depth_list[i]))
-            self.linear_list.append(nn.ReLU(depth_list[i]))
+            self.linear_list.append(nn.ReLU(inplace=True))
             # self.linear_list.append(nn.Tanh())
             # self.linear_list.append(nn.Dropout(0.2))
             
@@ -233,25 +233,17 @@ def manual_select(total_list,exclude_list=None):
 
 
 
-def run(train_path,test_path,result_path,net_depth=3,exclude_list=None,scale_flag=True,select_flag=True):
+def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=None,scale_flag=True,select_flag=False):
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '5'
     torch.manual_seed(0)
-
-    if scale_flag:
-        output_dir = f'./model_exclude_scale/'
-    elif select_flag:
-        output_dir = f'./model_select/'
-    else:
-        output_dir = f'./model_exclude/'
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     else:
         shutil.rmtree(output_dir)
         os.makedirs(output_dir)
-    # load training and testing data
     
+    # load training and testing data
     train_df = pd.read_csv(train_path)
     test_df = pd.read_csv(test_path)
     # result
@@ -281,17 +273,6 @@ def run(train_path,test_path,result_path,net_depth=3,exclude_list=None,scale_fla
     X = np.asarray(train_df[fea_list]).astype(np.float32)
     test = np.asarray(test_df[fea_list]).astype(np.float32)
     
-    # data scaler
-    if scale_flag:
-        X_len = X.shape[0]
-        data_scaler = StandardScaler()
-        cat_data = np.concatenate([X,test],axis=0)
-        cat_data= data_scaler.fit_transform(cat_data)
-
-        X = cat_data[:X_len]
-        test = cat_data[X_len:]
-    
-
     # feature selection
     if select_flag:
         select_model_path = './select_model.pkl'
@@ -303,6 +284,16 @@ def run(train_path,test_path,result_path,net_depth=3,exclude_list=None,scale_fla
 
         X = select_model.transform(X)
         test = select_model.transform(test)
+
+    # data scale
+    if scale_flag:
+        X_len = X.shape[0]
+        data_scaler = StandardScaler()
+        cat_data = np.concatenate([X,test],axis=0)
+        cat_data= data_scaler.fit_transform(cat_data)
+
+        X = cat_data[:X_len]
+        test = cat_data[X_len:]
     
     # print(Y)
     print(X.shape,test.shape)
@@ -419,9 +410,17 @@ if __name__ == '__main__':
     
     train_path = '../dataset/pssm_train.csv'
     test_path = '../dataset/pssm_test.csv'
+    # train_path = '../dataset/hmm_train.csv'
+    # test_path = '../dataset/hmm_test.csv'
     result_path = '../converter/test_result.csv'
+    output_dir = './pssm_total_scale/'
 
-    for i in range(10):
-        exclude_list = random.sample(pssm_key[2:],6)
+    os.environ['CUDA_VISIBLE_DEVICES'] = '4'
+
+    for i in range(100):
+        save_path = os.path.join(output_dir,f'trial_{str(i+1)}')
+        # exclude_list = random.sample(pssm_key[2:],6)
+        exclude_list = None
+        # exclude_list = random.sample(hmm_key[2:],6)
         print('exclude list:',exclude_list)
-        run(train_path,test_path,result_path,net_depth=3,exclude_list=exclude_list,scale_flag=True)
+        run(train_path,test_path,result_path,save_path,net_depth=3,exclude_list=exclude_list,scale_flag=True,select_flag=False)
