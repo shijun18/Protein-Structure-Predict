@@ -232,16 +232,17 @@ def main():
     # print(Y)
     print(X.shape,test.shape)
 
-
     total_result = []
-    epoch_num = 100
-    acc_threshold = 0.0
 
     depth = 3
-    depth_list = [fea_len*(2**(1-i)) for i in range(depth)]
+    depth_list = [int(fea_len*(2**(1-i))) for i in range(depth)]
+
     for fold_num,(train_index,val_index) in enumerate(kfold.split(X)):
         print(f'***********fold {fold_num+1} start!!***********')
-        fold_dir = os.path.join(output_dir,f'fold{fold_num}')
+        epoch_num = 100
+        acc_threshold = 0.0
+
+        fold_dir = os.path.join(output_dir,f'fold{fold_num+1}')
         if not os.path.exists(fold_dir):
             os.makedirs(fold_dir)
         net = MLP_CLASSIFIER(fea_len,num_classes,depth,depth_list)
@@ -297,7 +298,7 @@ def main():
                     'state_dict': net.state_dict()
                 }
 
-                file_name = 'val_acc:{:.5f}-val_loss:{:.5f}-mlp.pth'.format(val_acc,val_loss)
+                file_name = 'epoch:{}-val_acc:{:.5f}-val_loss:{:.5f}-mlp.pth'.format(epoch,val_acc,val_loss)
                 save_path = os.path.join(fold_dir, file_name)
                 print('Save as: %s'%file_name)
                 torch.save(saver, save_path)
