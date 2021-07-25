@@ -11,6 +11,8 @@ from torch.cuda.amp import autocast,GradScaler
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelEncoder
 
+from sklearn.metrics import accuracy_score,f1_score
+from utils import dfs_remove_weight
 
 class MyDataset(Dataset):
     def __init__(self, X, Y=None):
@@ -194,6 +196,21 @@ def evaluation(test_data,net,weight_path,use_fp16=True):
 
 
 
+
+
+def eval_metric(result_dict,test_id,pred_result,le):
+    true_result = [result_dict[case] for case in test_id]
+    true_result = le.transform(true_result)
+    acc = accuracy_score(true_result,pred_result)
+    f1 = f1_score(true_result,pred_result,average='macro')
+
+    print('Evaluation:\n')
+    print('Accuracy:%.5f'%acc)
+    print('F1 Score:%.5f'%f1)
+
+    return acc,f1
+
+
 def main():
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '7'
@@ -204,6 +221,10 @@ def main():
 
     test_path = '../dataset/pssm_test.csv'
     test_df = pd.read_csv(test_path)
+
+    result_path = '../converter/test_result.csv'
+    from utils import csv_reader_single
+    result_dict = csv_reader_single(result_path,'sample_id','category_id')    
 
     output_dir = './model/'
     if not os.path.exists(output_dir):
@@ -267,13 +288,13 @@ def main():
 
         train_loader = DataLoader(
                 train_dataset,
-                batch_size=128,
+                batch_size=256,
                 shuffle=True,
                 num_workers=2)
         
         val_loader = DataLoader(
                 val_dataset,
-                batch_size=128,
+                batch_size=256,
                 shuffle=False,
                 num_workers=2)
 
@@ -282,11 +303,12 @@ def main():
             val_acc,val_loss = val_epoch(epoch,net,criterion,val_loader)
             torch.cuda.empty_cache()
 
-            print('Train epoch:{},train_loss:{:.5f},train_acc:{:.5f}'
-                  .format(epoch, train_loss, train_acc))
+            if epoch % 10 == 0:
+                print('Train epoch:{},train_loss:{:.5f},train_acc:{:.5f}'
+                    .format(epoch, train_loss, train_acc))
 
-            print('Val epoch:{},val_loss:{:.5f},val_acc:{:.5f}'
-                  .format(epoch, val_loss, val_acc))
+                print('Val epoch:{},val_loss:{:.5f},val_acc:{:.5f}'
+                    .format(epoch, val_loss, val_acc))
 
 
             if lr_scheduler is not None:
@@ -303,27 +325,34 @@ def main():
                 print('Save as: %s'%file_name)
                 torch.save(saver, save_path)
         
+        # save top3 model
+        dfs_remove_weight(fold_dir,retain=3)
+
+        # generating test result using the best model
         fold_result = evaluation(test,net,save_path)
+        acc,f1 = eval_metric(result_dict,test_id,fold_result,le)
         total_result.append(fold_result)
         fold_result = le.inverse_transform(fold_result)
         
-
         fold_csv = {}
         fold_csv = pd.DataFrame(fold_csv)
         fold_csv['sample_id'] = test_id
         fold_csv['category_id'] = fold_result
-        fold_csv.to_csv(os.path.join(fold_dir, 'result.csv'),index=False)
-    
+        fold_csv.to_csv(os.path.join(output_dir, f'fold{fold_num}_acc-{round(acc,4)}_f1-{round(f1,4)}.csv'),index=False)
+
+    # result fusion by voting
     final_result = []
     vote_array = np.asarray(total_result).astype(np.uint8)
     final_result.extend([max(list(vote_array[:,i]),key=list(vote_array[:,i]).count) for i in range(vote_array.shape[1])])
+    acc,f1 = eval_metric(result_dict,test_id,final_result,le)
     final_result = le.inverse_transform(final_result)
 
+    # csv save
     total_csv = {}
     total_csv = pd.DataFrame(total_csv)
     total_csv['sample_id'] = test_id
     total_csv['category_id'] = final_result
-    total_csv.to_csv(os.path.join(output_dir, 'fusion_result.csv'),index=False)
+    total_csv.to_csv(os.path.join(output_dir, f'fusion_acc-{round(acc,4)}_f1-{round(f1,4)}.csv'),index=False)
 
 if __name__ == '__main__':
     main()
