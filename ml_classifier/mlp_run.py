@@ -258,15 +258,16 @@ def main():
     kfold = KFold(n_splits=5,shuffle=True,random_state=21)
     for fold_num,(train_index,val_index) in enumerate(kfold.split(X)):
         print(f'***********fold {fold_num+1} start!!***********')
+        fold_dir = os.path.join(output_dir,f'fold{fold_num+1}')
         if not os.path.exists(fold_dir):
             os.makedirs(fold_dir)
 
         # initialization
         epoch_num = 100
         acc_threshold = 0.0
-        depth = 3
+
+        depth = 4
         depth_list = [int(fea_len*(2**(1-i))) for i in range(depth)]
-        fold_dir = os.path.join(output_dir,f'fold{fold_num+1}')
         
         net = MLP_CLASSIFIER(fea_len,num_classes,depth,depth_list)
         criterion = nn.CrossEntropyLoss()
