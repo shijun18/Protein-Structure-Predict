@@ -214,22 +214,23 @@ def eval_metric(result_dict,test_id,pred_result,le):
 def main():
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-
-    train_path = '../dataset/pssm_train.csv'
-    train_df = pd.read_csv(train_path)
-
-
-    test_path = '../dataset/pssm_test.csv'
-    test_df = pd.read_csv(test_path)
-
-    result_path = '../converter/test_result.csv'
-    from utils import csv_reader_single
-    result_dict = csv_reader_single(result_path,'sample_id','category_id')    
-
     output_dir = './model/'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
+    # load training and testing data
+    train_path = '../dataset/pssm_train.csv'
+    train_df = pd.read_csv(train_path)
+
+    test_path = '../dataset/pssm_test.csv'
+    test_df = pd.read_csv(test_path)
+
+    # result
+    result_path = '../converter/test_result.csv'
+    from utils import csv_reader_single
+    result_dict = csv_reader_single(result_path,'sample_id','category_id')    
+
+    # data preprocessing
     del train_df['seq']
     del test_df['seq']
 
@@ -244,39 +245,39 @@ def main():
     num_classes = len(set(train_df['label']))
     fea_len = len(fea_list)
 
+    # convert to numpy array
     Y = np.asarray(train_df['label']).astype(np.uint8)
     X = np.asarray(train_df[fea_list]).astype(np.float32)
     test = np.asarray(test_df[fea_list]).astype(np.float32)
 
-    kfold = KFold(n_splits=5,shuffle=True,random_state=21)
-
     # print(Y)
     print(X.shape,test.shape)
 
+
     total_result = []
-
-    depth = 3
-    depth_list = [int(fea_len*(2**(1-i))) for i in range(depth)]
-
+    kfold = KFold(n_splits=5,shuffle=True,random_state=21)
     for fold_num,(train_index,val_index) in enumerate(kfold.split(X)):
         print(f'***********fold {fold_num+1} start!!***********')
-        epoch_num = 100
-        acc_threshold = 0.0
-
-        fold_dir = os.path.join(output_dir,f'fold{fold_num+1}')
         if not os.path.exists(fold_dir):
             os.makedirs(fold_dir)
+
+        # initialization
+        epoch_num = 100
+        acc_threshold = 0.0
+        depth = 3
+        depth_list = [int(fea_len*(2**(1-i))) for i in range(depth)]
+        fold_dir = os.path.join(output_dir,f'fold{fold_num+1}')
+        
         net = MLP_CLASSIFIER(fea_len,num_classes,depth,depth_list)
         criterion = nn.CrossEntropyLoss()
         optim = torch.optim.Adam(net.parameters(), lr=0.001, weight_decay=0.0001)
-        # optim = torch.optim.Adam(net.parameters(),lr=0.05,weight_decay=0.0001)
         lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, [25,60,80], gamma=0.1)
-        # lr_scheduler = None
         scaler = GradScaler()
         
         net = net.cuda()
         criterion = criterion.cuda()
 
+        # data loader
         x_train, x_val = X[train_index], X[val_index]
         y_train, y_val = Y[train_index], Y[val_index]
 
@@ -298,6 +299,7 @@ def main():
                 shuffle=False,
                 num_workers=2)
 
+        # main processing
         for epoch in range(epoch_num):
             train_acc, train_loss = train_epoch(epoch,net,criterion,optim,train_loader,scaler)
             val_acc,val_loss = val_epoch(epoch,net,criterion,val_loader)
@@ -334,6 +336,7 @@ def main():
         total_result.append(fold_result)
         fold_result = le.inverse_transform(fold_result)
         
+        # csv save
         fold_csv = {}
         fold_csv = pd.DataFrame(fold_csv)
         fold_csv['sample_id'] = test_id
