@@ -135,7 +135,7 @@ def train_epoch(epoch,net,criterion,optim,train_loader,scaler,use_fp16=True):
 
         torch.cuda.empty_cache()
 
-        if step % 200 == 0:
+        if step % 10 == 0:
             print('epoch:{},step:{},train_loss:{:.5f},train_acc:{:.5f},lr:{}'
                     .format(epoch, step, loss.item(), acc.item(), optim.param_groups[0]['lr']))
 
@@ -340,8 +340,8 @@ def main():
         # csv save
         fold_csv = {}
         fold_csv = pd.DataFrame(fold_csv)
-        fold_csv['sample_id'] = test_id
-        fold_csv['category_id'] = fold_result
+        fold_csv['sample_id'] = test_id + ['d2ciob_']
+        fold_csv['category_id'] = fold_result + ['b.1']
         fold_csv.to_csv(os.path.join(output_dir, f'fold{fold_num}_acc-{round(acc,4)}_f1-{round(f1,4)}.csv'),index=False)
 
     # result fusion by voting
@@ -354,8 +354,8 @@ def main():
     # csv save
     total_csv = {}
     total_csv = pd.DataFrame(total_csv)
-    total_csv['sample_id'] = test_id
-    total_csv['category_id'] = final_result
+    total_csv['sample_id'] = test_id + ['d2ciob_']
+    total_csv['category_id'] = final_result + ['b.1']
     total_csv.to_csv(os.path.join(output_dir, f'fusion_acc-{round(acc,4)}_f1-{round(f1,4)}.csv'),index=False)
 
 if __name__ == '__main__':
