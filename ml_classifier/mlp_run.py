@@ -413,14 +413,20 @@ if __name__ == '__main__':
     # train_path = '../dataset/hmm_train.csv'
     # test_path = '../dataset/hmm_test.csv'
     result_path = '../converter/test_result.csv'
-    output_dir = './pssm_total_scale/'
+    output_dir = './pssm_uncia_scale/'
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '4'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
-    for i in range(100):
+    for i in range(12):
         save_path = os.path.join(output_dir,f'trial_{str(i+1)}')
-        # exclude_list = random.sample(pssm_key[2:],6)
-        exclude_list = None
-        # exclude_list = random.sample(hmm_key[2:],6)
+        # total
+        # exclude_list = None
+        # half
+        #exclude_list = random.sample(pssm_key[2:],6)
+        # qtr
+        exclude_list = random.sample(pssm_key[2:],9)
+        # uncia
+        exclude_list = random.sample(pssm_key[2:],11)
+        
         print('exclude list:',exclude_list)
         run(train_path,test_path,result_path,save_path,net_depth=3,exclude_list=exclude_list,scale_flag=True,select_flag=False)

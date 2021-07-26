@@ -23,7 +23,7 @@ def csv_reader_single(csv_file,key_col=None,value_col=None):
     return target_dict
 
 
-def remove_weight_path(ckpt_path,retain=5):
+def remove_weight_path(ckpt_path,retain=1):
 
     if os.path.isdir(ckpt_path):
         pth_list = os.listdir(ckpt_path)
@@ -33,7 +33,7 @@ def remove_weight_path(ckpt_path,retain=5):
                 os.remove(os.path.join(ckpt_path,pth_item))
 
 
-def dfs_remove_weight(ckpt_path,retain=5):
+def dfs_remove_weight(ckpt_path,retain=1):
     for sub_path in os.scandir(ckpt_path):
         if sub_path.is_dir():
             dfs_remove_weight(sub_path.path,retain)
@@ -43,5 +43,5 @@ def dfs_remove_weight(ckpt_path,retain=5):
 
 if __name__ == "__main__":
 
-    ckpt_path = './model'
+    ckpt_path = './pssm_half_scale'
     dfs_remove_weight(ckpt_path)
