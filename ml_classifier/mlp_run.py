@@ -1,6 +1,9 @@
 import os
 import shutil
 import pickle
+from numpy.core.fromnumeric import shape
+
+from pandas._config import config
 from torch import nn
 import torch
 import pandas as pd
@@ -13,20 +16,68 @@ from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score,f1_score
+from sklearn.decomposition import PCA
+from sklearn.decomposition import FastICA
+from torchvision import transforms
+
 from utils import dfs_remove_weight
 from feature_selection import select_feature_linesvc
 
 
+ACTIVATION = {
+    'relu':nn.ReLU(inplace=True),
+    'elu':nn.ELU(inplace=True),
+    'leakyrelu':nn.LeakyReLU(inplace=True),
+    'prelu':nn.PReLU(),
+    'gelu':nn.GELU(),
+    'tanh':nn.Tanh()
+}
+
+
+class RandomMask1d(object):
+    def __init__(self,factor=0.1,p=0.5):
+        self.factor = factor
+        self.p = p
+    
+    def __call__(self,seq):
+        """
+        seq: vector of 1d
+        """
+        if np.random.rand() > self.p:
+            mask = (np.random.random_sample(seq.shape) > self.factor).astype(np.float32)
+            seq = seq * mask
+
+        return seq 
+
+class RandomScale1d(object):
+    def __init__(self,factor=0.2,p=0.5):
+        self.factor = factor
+        self.p = p
+    
+    def __call__(self,seq):
+        """
+        seq: vector of 1d
+        """
+        if np.random.rand() > self.p:
+            mask = (np.random.random_sample(seq.shape)*self.factor + (1.0-self.factor/2)).astype(np.float32)
+            seq = seq * mask
+
+        return seq 
+
+
 class MyDataset(Dataset):
-    def __init__(self, X, Y=None):
+    def __init__(self, X, Y=None,transform=None):
         self.X = X
         self.Y = Y
+        self.transform = transform
 
     def __len__(self):
         return len(self.X)
 
     def __getitem__(self,index):
         data = self.X[index]
+        if self.transform is not None:
+            data = self.transform(data)
         if self.Y is not None:
             target = self.Y[index]
             sample = {'data':torch.from_numpy(data), 'target':int(target)}
@@ -37,7 +88,7 @@ class MyDataset(Dataset):
 
 
 class MLP_CLASSIFIER(nn.Module):
-    def __init__(self, input_size, output_size=245, depth=3, depth_list=[256,128,64], drop_prob=0.5, use_norm=True):
+    def __init__(self, input_size, output_size=245, depth=3, depth_list=[256,128,64], drop_prob=0.5, use_norm=True,activation=None):
         super(MLP_CLASSIFIER, self).__init__()
 
         assert len(depth_list) == depth
@@ -49,7 +100,10 @@ class MLP_CLASSIFIER(nn.Module):
                 self.linear_list.append(nn.Linear(depth_list[i-1],depth_list[i]))
             if use_norm:
                 self.linear_list.append(nn.BatchNorm1d(depth_list[i]))
-            self.linear_list.append(nn.ReLU(inplace=True))
+            if activation is None:
+                self.linear_list.append(nn.ReLU(inplace=True))
+            else:
+                self.linear_list.append(activation)
             # self.linear_list.append(nn.Tanh())
             # self.linear_list.append(nn.Dropout(0.2))
             
@@ -193,11 +247,38 @@ def evaluation(test_data,net,weight_path,use_fp16=True):
         with autocast(use_fp16):
             output = net(data)
         output = output.float()
-        output = torch.softmax(output,dim=1)
-        output = torch.argmax(output,dim=1) #N
+        prob_output = torch.softmax(output,dim=1) # N*C
+        output = torch.argmax(prob_output,dim=1) #N
         torch.cuda.empty_cache()
 
-    return output.cpu().numpy().tolist()
+    return output.cpu().numpy().tolist(),prob_output.cpu().numpy()
+
+
+def evaluation_tta(test_data,net,weight_path,use_fp16=True,tta=5):
+    ckpt = torch.load(weight_path)
+    net.load_state_dict(ckpt['state_dict'])
+    net.eval()
+
+    transform = transforms.Compose([RandomScale1d()])
+
+    vote_out = []
+    prob_out = []
+    for _ in range(tta):
+        input_data = transform(test_data)
+        input_data = torch.from_numpy(input_data) #N*fea_len
+        with torch.no_grad():
+            data = input_data.cuda()
+            with autocast(use_fp16):
+                output = net(data)
+            output = output.float()
+            prob_output = torch.softmax(output,dim=1) #N*C
+            output = torch.argmax(prob_output,dim=1) #N
+            vote_out.append(output.cpu().numpy().tolist())
+            prob_out.append(prob_output.cpu().numpy()) # tta*N*C
+            torch.cuda.empty_cache()
+    vote_array = np.asarray(vote_out).astype(np.uint8) # tta*N
+    vote_out = [max(list(vote_array[:,i]),key=list(vote_array[:,i]).count) for i in range(vote_array.shape[1])]
+    return vote_out, np.mean(prob_out, axis=0)
 
 
 def eval_metric(result_dict,test_id,pred_result,le):
@@ -206,7 +287,7 @@ def eval_metric(result_dict,test_id,pred_result,le):
     acc = accuracy_score(true_result,pred_result)
     f1 = f1_score(true_result,pred_result,average='macro')
 
-    print('Evaluation:\n')
+    print('Evaluation:')
     print('Accuracy:%.5f'%acc)
     print('F1 Score:%.5f'%f1)
 
@@ -233,7 +314,7 @@ def manual_select(total_list,exclude_list=None):
 
 
 
-def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=None,scale_flag=True,select_flag=False):
+def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=None,scale_flag=True,select_flag=False,dim_reduction=False,aug_flag=False,tta=False,**aux_config):
 
     torch.manual_seed(0)
 
@@ -265,8 +346,6 @@ def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=Non
 
     le = LabelEncoder()
     train_df['label'] = le.fit_transform(train_df['label'])
-    num_classes = len(set(train_df['label']))
-    fea_len = len(fea_list)
 
     # convert to numpy array
     Y = np.asarray(train_df['label']).astype(np.uint8)
@@ -295,11 +374,28 @@ def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=Non
         X = cat_data[:X_len]
         test = cat_data[X_len:]
     
+
+    # dim reduction
+    if dim_reduction:
+        X_len = X.shape[0]
+        cat_data = np.concatenate([X,test],axis=0)
+        # fastica = FastICA(n_components=int(X.shape[1]*0.5),random_state=0)
+        # cat_data= fastica.fit_transform(cat_data)
+
+        pca = PCA(n_components=int(X.shape[1]*0.5))
+        cat_data= pca.fit_transform(cat_data)
+        
+        X = cat_data[:X_len]
+        test = cat_data[X_len:]
+
     # print(Y)
     print(X.shape,test.shape)
 
+    num_classes = len(set(train_df['label'])) #245
+    fea_len = X.shape[1]
 
     total_result = []
+    total_prob_result = []
     kfold = KFold(n_splits=5,shuffle=True,random_state=21)
     for fold_num,(train_index,val_index) in enumerate(kfold.split(X)):
         print(f'***********fold {fold_num+1} start!!***********')
@@ -314,7 +410,7 @@ def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=Non
         depth = net_depth
         depth_list = [int(fea_len*(2**(1-i))) for i in range(depth)]
         
-        net = MLP_CLASSIFIER(fea_len,num_classes,depth,depth_list)
+        net = MLP_CLASSIFIER(fea_len,num_classes,depth,depth_list,**aux_config)
         criterion = nn.CrossEntropyLoss()
         optim = torch.optim.Adam(net.parameters(), lr=0.001, weight_decay=0.0001)
         lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, [25,60,80], gamma=0.1)
@@ -330,8 +426,13 @@ def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=Non
         print('Train Data Size:',x_train.shape)
         print('Val Data Size:',x_val.shape)
 
-        train_dataset = MyDataset(X=x_train,Y=y_train)
-        val_dataset = MyDataset(X=x_val,Y=y_val)
+        if aug_flag:
+            transform = transforms.Compose([RandomScale1d()])
+        else:
+            transform = None
+
+        train_dataset = MyDataset(X=x_train,Y=y_train,transform=transform)
+        val_dataset = MyDataset(X=x_val,Y=y_val,transform=transform)
 
         train_loader = DataLoader(
                 train_dataset,
@@ -374,34 +475,66 @@ def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=Non
                 torch.save(saver, save_path)
         
         # save top3 model
-        dfs_remove_weight(fold_dir,retain=3)
+        dfs_remove_weight(fold_dir,retain=1)
 
         # generating test result using the best model
-        fold_result = evaluation(test,net,save_path)
-        acc,f1 = eval_metric(result_dict,test_id,fold_result,le)
+        if tta:
+            fold_result,fold_prob_result = evaluation_tta(test,net,save_path,tta=9) #N,N*C
+        else:
+            fold_result,fold_prob_result = evaluation(test,net,save_path) #N,N*C
         total_result.append(fold_result)
-        fold_result = le.inverse_transform(fold_result)
+        total_prob_result.append(fold_prob_result)
         
+        fold_prob_result = np.argmax(fold_prob_result,axis=1).astype(np.uint8).tolist()
+        print(f'\nfold {fold_num+1} vote:')
+        acc_vote,f1_vote = eval_metric(result_dict,test_id,fold_result,le)
+        print(f'\nfold {fold_num+1} prob:')
+        acc_prob,f1_prob = eval_metric(result_dict,test_id,fold_prob_result,le)
+        fold_result = le.inverse_transform(fold_result)
+        fold_prob_result = le.inverse_transform(fold_prob_result)
+
         # csv save
-        fold_csv = {}
-        fold_csv = pd.DataFrame(fold_csv)
-        fold_csv['sample_id'] = list(test_id) + ['d2ciob_']
-        fold_csv['category_id'] = list(fold_result) + ['b.1']
-        fold_csv.to_csv(os.path.join(output_dir, f'fold{fold_num}_acc-{round(acc,4)}_f1-{round(f1,4)}.csv'),index=False)
+        fold_vote_csv = {}
+        fold_vote_csv = pd.DataFrame(fold_vote_csv)
+        fold_vote_csv['sample_id'] = list(test_id) + ['d2ciob_']
+        fold_vote_csv['category_id'] = list(fold_result) + ['b.1']
+        fold_vote_csv.to_csv(os.path.join(output_dir, f'fold{fold_num}_acc-{round(acc_vote,4)}_f1-{round(f1_vote,4)}-vote.csv'),index=False)
+
+        fold_prob_csv = {}
+        fold_prob_csv = pd.DataFrame(fold_prob_csv)
+        fold_prob_csv['sample_id'] = list(test_id) + ['d2ciob_']
+        fold_prob_csv['category_id'] = list(fold_prob_result) + ['b.1']
+        fold_vote_csv.to_csv(os.path.join(output_dir, f'fold{fold_num}_acc-{round(acc_prob,4)}_f1-{round(f1_prob,4)}-prob.csv'),index=False)
 
     # result fusion by voting
-    final_result = []
-    vote_array = np.asarray(total_result).astype(np.uint8)
-    final_result.extend([max(list(vote_array[:,i]),key=list(vote_array[:,i]).count) for i in range(vote_array.shape[1])])
-    acc,f1 = eval_metric(result_dict,test_id,final_result,le)
-    final_result = le.inverse_transform(final_result)
+    final_vote_result = []
+    vote_array = np.asarray(total_result).astype(np.uint8) #fold*N
+    final_vote_result.extend([max(list(vote_array[:,i]),key=list(vote_array[:,i]).count) for i in range(vote_array.shape[1])])
+    print('\nfusion vote:')
+    acc_vote,f1_vote = eval_metric(result_dict,test_id,final_vote_result,le)
+    final_vote_result = le.inverse_transform(final_vote_result)
+
+    # result fusion by avg prob
+    final_prob_result = []
+    prob_array = np.asarray(total_prob_result) # fold*N*C
+    prob_array = np.mean(prob_array,axis=0) #N*C
+    final_prob_result = np.argmax(prob_array,axis=1).astype(np.uint8).tolist()
+    print('\nfusion prob:')
+    acc_prob,f1_prob = eval_metric(result_dict,test_id,final_prob_result,le)
+    final_prob_result = le.inverse_transform(final_prob_result)
 
     # csv save
-    total_csv = {}
-    total_csv = pd.DataFrame(total_csv)
-    total_csv['sample_id'] = list(test_id) + ['d2ciob_']
-    total_csv['category_id'] = list(final_result) + ['b.1']
-    total_csv.to_csv(os.path.join(output_dir, f'fusion_acc-{round(acc,4)}_f1-{round(f1,4)}.csv'),index=False)
+    total_vote_csv = {}
+    total_vote_csv = pd.DataFrame(total_vote_csv)
+    total_vote_csv['sample_id'] = list(test_id) + ['d2ciob_']
+    total_vote_csv['category_id'] = list(final_vote_result) + ['b.1']
+    total_vote_csv.to_csv(os.path.join(output_dir, f'fusion_acc-{round(acc_vote,4)}_f1-{round(f1_vote,4)}-vote.csv'),index=False)
+
+    total_prob_csv = {}
+    total_prob_csv = pd.DataFrame(total_prob_csv)
+    total_prob_csv['sample_id'] = list(test_id) + ['d2ciob_']
+    total_prob_csv['category_id'] = list(final_prob_result) + ['b.1']
+    total_prob_csv.to_csv(os.path.join(output_dir, f'fusion_acc-{round(acc_prob,4)}_f1-{round(f1_prob,4)}-prob.csv'),index=False)
 
 
 if __name__ == '__main__':
@@ -413,20 +546,22 @@ if __name__ == '__main__':
     # train_path = '../dataset/hmm_train.csv'
     # test_path = '../dataset/hmm_test.csv'
     result_path = '../converter/test_result.csv'
-    output_dir = './pssm_uncia_scale/'
+    output_dir = './result/pssm_half_scale_aug_rs_tta_d2/'
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
-    for i in range(12):
+    for i in range(20):
+    # for i,act in enumerate(ACTIVATION):
         save_path = os.path.join(output_dir,f'trial_{str(i+1)}')
         # total
         # exclude_list = None
         # half
-        #exclude_list = random.sample(pssm_key[2:],6)
+        exclude_list = random.sample(pssm_key[2:],6)
         # qtr
-        exclude_list = random.sample(pssm_key[2:],9)
+        # exclude_list = random.sample(pssm_key[2:],9)
         # uncia
-        exclude_list = random.sample(pssm_key[2:],11)
+        # exclude_list = random.sample(pssm_key[2:],11)
         
         print('exclude list:',exclude_list)
-        run(train_path,test_path,result_path,save_path,net_depth=3,exclude_list=exclude_list,scale_flag=True,select_flag=False)
+        # print('activation fun:',act)
+        run(train_path,test_path,result_path,save_path,net_depth=2,exclude_list=exclude_list,scale_flag=True,select_flag=False,dim_reduction=False,aug_flag=True,tta=True)

@@ -34,7 +34,7 @@ def eval_metric(result_dict,test_id,pred_result):
     acc = accuracy_score(true_result,pred_result)
     f1 = f1_score(true_result,pred_result,average='macro')
 
-    print('Evaluation:\n')
+    print('Evaluation:')
     print('Accuracy:%.5f'%acc)
     print('F1 Score:%.5f'%f1)
 
@@ -48,7 +48,7 @@ def find_csv(csv_dir,prefix='fusion'):
         if trial.is_dir():
             try:
                 csv_file = glob.glob(os.path.join(trial.path,prefix + '*.csv'))[0]
-                if eval(os.path.splitext(os.path.basename(csv_file))[0].split('-')[-1]) > 0.78:
+                if eval(os.path.splitext(os.path.basename(csv_file))[0].split('-')[2]) > 0.78:
                     csv_path.append(csv_file)
             except:
                 continue
@@ -60,13 +60,15 @@ def find_csv(csv_dir,prefix='fusion'):
 
 if __name__ == "__main__":
 
-    save_path = './fusion.csv'
-    csv_dir = ['./pssm_qtr_scale/','./pssm_half_scale/']
+    save_path = './result/fusion.csv'
+    # csv_dir = ['./result/pssm_qtr_scale/','./result/pssm_half_scale/','./result/pssm_uncia_scale/']
+    csv_dir = ['./result/pssm_qtr_scale/','./result/pssm_half_scale/','./result/pssm_half_scale_aug_rs_tta/']
+    # csv_dir = ['./result/pssm_half_scale_aug_rs_tta/']
     result_path = '../converter/test_result.csv'
     csv_path_list = []
     for item in csv_dir:
         csv_path_list += find_csv(item)
-    print(len(csv_path_list))
+    print('Ensemble Len:',len(csv_path_list))
     vote_ensemble(csv_path_list, save_path)
     result_dict = csv_reader_single(result_path,'sample_id','category_id')  
     fusion_df = pd.read_csv(save_path)
