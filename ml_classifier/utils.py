@@ -43,5 +43,5 @@ def dfs_remove_weight(ckpt_path,retain=1):
 
 if __name__ == "__main__":
 
-    ckpt_path = './pssm_half_scale'
+    ckpt_path = './result/pssm_half_scale'
     dfs_remove_weight(ckpt_path)

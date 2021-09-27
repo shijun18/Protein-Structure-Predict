@@ -315,7 +315,7 @@ def manual_select(total_list,exclude_list=None):
 
 
 
-def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=None,scale_flag=True,select_flag=False,dim_reduction=False,aug_flag=False,tta=False,**aux_config):
+def run(train_path,test_path,result_path,output_dir,fake_relut_path=None,net_depth=3,exclude_list=None,scale_flag=True,select_flag=False,dim_reduction=False,aug_flag=False,tta=False,**aux_config):
 
     torch.manual_seed(0)
 
@@ -328,6 +328,7 @@ def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=Non
     # load training and testing data
     train_df = pd.read_csv(train_path)
     test_df = pd.read_csv(test_path)
+
     # result
     from utils import csv_reader_single
     result_dict = csv_reader_single(result_path,'sample_id','category_id')    
@@ -352,6 +353,22 @@ def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=Non
     Y = np.asarray(train_df['label']).astype(np.uint8)
     X = np.asarray(train_df[fea_list]).astype(np.float32)
     test = np.asarray(test_df[fea_list]).astype(np.float32)
+    print(X.shape)
+    print(test.shape)
+
+    if fake_relut_path is not None:
+        fake_df = pd.read_csv(fake_relut_path)
+        fake_label = np.array(fake_df['category_id'])
+        fake_prob = np.asarray(fake_df[[f'prob_{i}' for i in range(245)]]).astype(np.float32) #N*C
+        fake_index = [i for i in range(fake_prob.shape[0]) if np.max(fake_prob[i]) > 0.9]
+        fake_label = list(fake_label[fake_index])
+        fake_label = le.transform(fake_label)
+        print(len(fake_label))
+        print(test[fake_index].shape)
+        Y = np.hstack((Y,np.asarray(fake_label).astype(np.uint8)))
+        X = np.vstack((X,test[fake_index]))
+        print(X.shape)
+        print(Y.shape)
     
     # feature selection
     if select_flag:
@@ -521,6 +538,7 @@ def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=Non
     final_prob_result = []
     prob_array = np.asarray(total_prob_result) # fold*N*C
     prob_array = np.mean(prob_array,axis=0) #N*C
+    tmp_prob_array = prob_array.copy()
     final_prob_result = np.argmax(prob_array,axis=1).astype(np.uint8).tolist()
     print('\nfusion prob:')
     acc_prob,f1_prob = eval_metric(result_dict,test_id,final_prob_result,le)
@@ -537,6 +555,8 @@ def run(train_path,test_path,result_path,output_dir,net_depth=3,exclude_list=Non
     total_prob_csv = pd.DataFrame(total_prob_csv)
     total_prob_csv['sample_id'] = list(test_id) + ['d2ciob_']
     total_prob_csv['category_id'] = list(final_prob_result) + ['b.1']
+    for i in range(num_classes):
+        total_prob_csv[f'prob_{i}'] = list(tmp_prob_array[:,i]) + [0]
     total_prob_csv.to_csv(os.path.join(output_dir, f'fusion_acc-{round(acc_prob,4)}_f1-{round(f1_prob,4)}-prob.csv'),index=False)
 
 
@@ -550,9 +570,10 @@ if __name__ == '__main__':
     train_path = '../dataset/hmm_train.csv'
     test_path = '../dataset/hmm_test.csv'
     result_path = '../converter/test_result.csv'
-    output_dir = './result/hmm_half_scale_tmp/'
+    fake_relut_path = './result/hmm_half_scale_pro_tmp/trial_8/fusion_acc-0.9122_f1-0.8814-prob.csv'
+    output_dir = './result/hmm_half_scale_pro_fake/'
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
     fea_key = hmm_key
     for i in range(10):
@@ -569,4 +590,5 @@ if __name__ == '__main__':
         
         print('exclude list:',exclude_list)
         # print('activation fun:',act)
-        run(train_path,test_path,result_path,save_path,net_depth=3,exclude_list=exclude_list,scale_flag=True,select_flag=False,dim_reduction=False,aug_flag=False,tta=False)
+        run(train_path,test_path,result_path,save_path,fake_relut_path,net_depth=3,exclude_list=exclude_list,scale_flag=True,select_flag=False,dim_reduction=False,aug_flag=False,tta=False)
+

@@ -42,17 +42,21 @@ if __name__ == '__main__':
     pssm_key = ['pssm_sum', 'pssm_avg','acc_1','sxg_0','acc_2','sxg_1','acc_3','sxg_2','acc_4','sxg_3','acc_5','sxg_4','acc_6','sxg_5']
 
     # train_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/train.pkl'
-    # train_csv = '../dataset/pssm_hmm_train.csv'
-    # pkl_to_csv(train_pkl,train_csv,['pssm','hmm'])
+    train_pkl = '/staff/wangzhaohui/proteinFold/data/list_input_hmmcluster_pssmblast/train.pkl'
+    train_csv = '../dataset/pssm_hmm_train.csv'
+    pkl_to_csv(train_pkl,train_csv,['pssm','hmm'])
 
     # test_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/test.pkl'
-    # test_csv = '../dataset/pssm_hmm__test.csv'
-    # pkl_to_csv(test_pkl,test_csv,['pssm','hmm'])
+    test_pkl = '/staff/wangzhaohui/proteinFold/data/list_input_hmmcluster_pssmblast/test.pkl'
+    test_csv = '../dataset/pssm_hmm_test.csv'
+    pkl_to_csv(test_pkl,test_csv,['pssm','hmm'])
     
-    train_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/train.pkl'
+    # train_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/train.pkl'
+    train_pkl = '/staff/wangzhaohui/proteinFold/data/list_input_hmmcluster_pssmblast/train.pkl'
     train_csv = '../dataset/hmm_train.csv'
     pkl_to_csv(train_pkl,train_csv,['pssm','hmm'] + pssm_key)
 
-    test_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/test.pkl'
+    # test_pkl = '/staff/minfanzhao/workspace/protein_predict/dataset/test.pkl'
+    test_pkl = '/staff/wangzhaohui/proteinFold/data/list_input_hmmcluster_pssmblast/test.pkl'
     test_csv = '../dataset/hmm_test.csv'
     pkl_to_csv(test_pkl,test_csv,['pssm','hmm'] + pssm_key)

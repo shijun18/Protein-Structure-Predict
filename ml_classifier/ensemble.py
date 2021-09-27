@@ -47,8 +47,8 @@ def find_csv(csv_dir,prefix='fusion'):
         # print(trial.path)
         if trial.is_dir():
             try:
-                csv_file = glob.glob(os.path.join(trial.path,prefix + '*.csv'))[0]
-                if eval(os.path.splitext(os.path.basename(csv_file))[0].split('-')[2]) > 0.78:
+                csv_file = glob.glob(os.path.join(trial.path,prefix + '*-prob.csv'))[0]
+                if eval(os.path.splitext(os.path.basename(csv_file))[0].split('-')[2]) > 0.87:
                     csv_path.append(csv_file)
             except:
                 continue
@@ -62,8 +62,8 @@ if __name__ == "__main__":
 
     save_path = './result/fusion.csv'
     # csv_dir = ['./result/pssm_qtr_scale/','./result/pssm_half_scale/','./result/pssm_uncia_scale/']
-    csv_dir = ['./result/pssm_qtr_scale/','./result/pssm_half_scale/','./result/pssm_half_scale_aug_rs_tta/']
-    # csv_dir = ['./result/pssm_half_scale_aug_rs_tta/']
+    # csv_dir = ['./result/hmm_qtr_scale/','./result/hmm_half_scale/']
+    csv_dir = ['./result/hmm_half_scale_pro_fake/','./result/hmm_qtr_scale/','./result/hmm_half_scale/']
     result_path = '../converter/test_result.csv'
     csv_path_list = []
     for item in csv_dir:
